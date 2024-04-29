@@ -8,6 +8,7 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
 import { Construct } from "constructs";
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -16,10 +17,19 @@ export class EDAAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    // S3 bucket
     const imagesBucket = new s3.Bucket(this, "images", {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       publicReadAccess: false,
+    });
+
+    // Dynamo DB table
+    const imagesTable = new dynamodb.Table(this, "ImagesTable", {
+      partitionKey: { name: "filename", type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      tableName: "Images",
     });
 
     // Integration infrastructure
@@ -50,11 +60,11 @@ export class EDAAppStack extends cdk.Stack {
       }
     );
 
-    const mailerFn = new lambdanode.NodejsFunction(this, "mailer-function", {
+    const confirmationMailerFn = new lambdanode.NodejsFunction(this, "confirmationMailer-function", {
       runtime: lambda.Runtime.NODEJS_16_X,
       memorySize: 1024,
       timeout: cdk.Duration.seconds(3),
-      entry: `${__dirname}/../lambdas/mailer.ts`,
+      entry: `${__dirname}/../lambdas/confirmationMailer.ts`,
     });
 
     const rejectionMailerFn = new lambdanode.NodejsFunction(
@@ -73,16 +83,14 @@ export class EDAAppStack extends cdk.Stack {
       displayName: "New Image topic",
     });
 
-    newImageTopic.addSubscription(new subs.SqsSubscription(dlq));
-    newImageTopic.addSubscription(new subs.LambdaSubscription(mailerFn));
+    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
+    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
 
     // S3 --> SQS
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.SnsDestination(newImageTopic)
     );
-
-    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
 
     // SQS --> Lambda
     processImageFn.addEventSource(
@@ -100,6 +108,17 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
+    // Dynamo DB Permissions
+    processImageFn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ["dynamodb:PutItem", "dynamodb:GetItem"],
+      resources: [imagesTable.tableArn],
+    }));
+    
+    processImageFn.addEnvironment("DYNAMODB_TABLE_NAME", imagesTable.tableName);
+    imagesTable.grantReadWriteData(processImageFn);
+
+
     // Permissions
     imagesBucket.grantRead(processImageFn);
 
@@ -111,7 +130,7 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
-    mailerFn.addToRolePolicy(
+    confirmationMailerFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
@@ -136,9 +155,9 @@ export class EDAAppStack extends cdk.Stack {
     );
 
     // Output
-
     new cdk.CfnOutput(this, "bucketName", {
       value: imagesBucket.bucketName,
     });
   }
 }
+
