@@ -35,17 +35,6 @@ export class EDAAppStack extends cdk.Stack {
       },
     });
 
-    const mailerQ = new sqs.Queue(this, "mailer-queue", {
-      receiveMessageWaitTime: cdk.Duration.seconds(10),
-    });
-
-    const newImageTopic = new sns.Topic(this, "NewImageTopic", {
-      displayName: "New Image topic",
-    });
-
-    newImageTopic.addSubscription(new subs.SqsSubscription(dlq));
-    newImageTopic.addSubscription(new subs.SqsSubscription(mailerQ));
-
     // Lambda functions
     const processImageFn = new lambdanode.NodejsFunction(
       this,
@@ -79,6 +68,14 @@ export class EDAAppStack extends cdk.Stack {
       }
     );
 
+    // Topic
+    const newImageTopic = new sns.Topic(this, "NewImageTopic", {
+      displayName: "New Image topic",
+    });
+
+    newImageTopic.addSubscription(new subs.SqsSubscription(dlq));
+    newImageTopic.addSubscription(new subs.LambdaSubscription(mailerFn));
+
     // S3 --> SQS
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
@@ -90,13 +87,6 @@ export class EDAAppStack extends cdk.Stack {
     // SQS --> Lambda
     processImageFn.addEventSource(
       new events.SqsEventSource(imageProcessQueue, {
-        batchSize: 5,
-        maxBatchingWindow: cdk.Duration.seconds(10),
-      })
-    );
-
-    mailerFn.addEventSource(
-      new events.SqsEventSource(mailerQ, {
         batchSize: 5,
         maxBatchingWindow: cdk.Duration.seconds(10),
       })
