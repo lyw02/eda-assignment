@@ -60,12 +60,16 @@ export class EDAAppStack extends cdk.Stack {
       }
     );
 
-    const confirmationMailerFn = new lambdanode.NodejsFunction(this, "confirmationMailer-function", {
-      runtime: lambda.Runtime.NODEJS_16_X,
-      memorySize: 1024,
-      timeout: cdk.Duration.seconds(3),
-      entry: `${__dirname}/../lambdas/confirmationMailer.ts`,
-    });
+    const confirmationMailerFn = new lambdanode.NodejsFunction(
+      this,
+      "confirmationMailer-function",
+      {
+        runtime: lambda.Runtime.NODEJS_16_X,
+        memorySize: 1024,
+        timeout: cdk.Duration.seconds(3),
+        entry: `${__dirname}/../lambdas/confirmationMailer.ts`,
+      }
+    );
 
     const rejectionMailerFn = new lambdanode.NodejsFunction(
       this,
@@ -78,18 +82,47 @@ export class EDAAppStack extends cdk.Stack {
       }
     );
 
-    // Topic
+    const processDeleteFn = new lambdanode.NodejsFunction(
+      this,
+      "ProcessDeleteFn",
+      {
+        runtime: lambda.Runtime.NODEJS_16_X,
+        entry: `${__dirname}/../lambdas/processDelete.ts`,
+        timeout: cdk.Duration.seconds(15),
+        memorySize: 256,
+        environment: {
+          DYNAMODB_TABLE_NAME: imagesTable.tableName,
+        },
+      }
+    );
+
+    // Topics
     const newImageTopic = new sns.Topic(this, "NewImageTopic", {
       displayName: "New Image topic",
     });
 
-    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
+    const deleteAndUpdateTopic = new sns.Topic(this, "DeleteAndUpdateTopic", {
+      displayName: "Delete and Update Topic",
+    });
+
+    newImageTopic.addSubscription(
+      new subs.LambdaSubscription(confirmationMailerFn)
+    );
     newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
+
+    deleteAndUpdateTopic.addSubscription(
+      new subs.LambdaSubscription(processDeleteFn)
+    );
 
     // S3 --> SQS
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.SnsDestination(newImageTopic)
+    );
+
+    imagesBucket.addEventNotification(
+      s3.EventType.OBJECT_REMOVED_DELETE,
+      new s3n.SnsDestination(deleteAndUpdateTopic)
     );
 
     // SQS --> Lambda
@@ -109,15 +142,17 @@ export class EDAAppStack extends cdk.Stack {
     );
 
     // Dynamo DB Permissions
-    processImageFn.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ["dynamodb:PutItem", "dynamodb:GetItem"],
-      resources: [imagesTable.tableArn],
-    }));
-    
+    processImageFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["dynamodb:PutItem", "dynamodb:GetItem"],
+        resources: [imagesTable.tableArn],
+      })
+    );
+
     processImageFn.addEnvironment("DYNAMODB_TABLE_NAME", imagesTable.tableName);
     imagesTable.grantReadWriteData(processImageFn);
-
+    imagesTable.grantWriteData(processDeleteFn);
 
     // Permissions
     imagesBucket.grantRead(processImageFn);
@@ -154,10 +189,17 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
+    processDeleteFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["dynamodb:DeleteItem"],
+        resources: [imagesTable.tableArn],
+      })
+    );
+
     // Output
     new cdk.CfnOutput(this, "bucketName", {
       value: imagesBucket.bucketName,
     });
   }
 }
-
