@@ -1,32 +1,25 @@
 import { SNSHandler } from "aws-lambda";
+import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
 const ddbDocClient = createDDbDocClient();
 
 export const handler: SNSHandler = async (event) => {
   for (const record of event.Records) {
-    const snsMessage = JSON.parse(record.Sns.Message);
+    const message = JSON.parse(record.Sns.Message);
+    const messageName = message.name;
+    const messageDescription = message.description;
 
-    if (
-      snsMessage.Records &&
-      snsMessage.comment_type &&
-      snsMessage.comment_type === "Delete"
-    ) {
-      for (const messageRecord of snsMessage.Records) {
-        const s3e = messageRecord.s3;
-        const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
-
-        await ddbDocClient.send(
-          new DeleteCommand({
-            TableName: process.env.DYNAMODB_TABLE_NAME,
-            Key: {
-              filename: srcKey,
-            },
-          })
-        );
-      }
-    }
+    await ddbDocClient.send(
+      new UpdateCommand({
+        TableName: process.env.DYNAMODB_TABLE_NAME,
+        Key: { filename: messageName },
+        UpdateExpression: "SET description = :d",
+        ExpressionAttributeValues: {
+          ":d": messageDescription,
+        },
+      })
+    );
   }
 };
 
