@@ -1,3 +1,24 @@
+## EDA Assignment - Distributed Systems.
+
+__Name:__ Yiwei Liu
+
+__YouTube Demo link__ - https://youtu.be/VpINXcTNi84
 
 
-aws s3 cp test.txt s3://a-bucket/test.txt --metadata '{"x-amz-meta-cms-id":"34533452"}'
+
+### Phase 1.
+
++ Confirmation Mailer - Fully implemented.
++ Rejection Mailer - Fully implemented.
++ Process Image - Fully implemented.
+
+### Phase 2 (if relevant).
+
++ Confirmation Mailer - Fully implemented.
++ Rejection Mailer - Fully implemented.
++ Process Image - Fully implemented.
++ Update Table - Fully implemented.
+
+### Phase 3 (if relevant).
+
++ Delete Mailer - Partially working.
