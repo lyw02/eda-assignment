@@ -139,13 +139,6 @@ export class EDAAppStack extends cdk.Stack {
       })
     );
 
-    // S3 --> SNS
-    // const filterLambda = new lambdanode.NodejsFunction(this, "FilterLambda", {
-    //   runtime: lambda.Runtime.NODEJS_14_X,
-    //   entry: `${__dirname}/../lambdas/filterLambda.ts`,
-    //   handler: "handler",
-    // });
-
     // S3 --> SQS
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
@@ -237,13 +230,6 @@ export class EDAAppStack extends cdk.Stack {
         resources: [imagesTable.tableArn],
       })
     );
-
-    // filterLambda.addToRolePolicy(
-    //   new iam.PolicyStatement({
-    //     actions: ["sns:Publish"],
-    //     resources: [deleteAndUpdateTopic.topicArn],
-    //   })
-    // );
 
     // Output
     new cdk.CfnOutput(this, "bucketName", {
