@@ -9,6 +9,9 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import { StreamViewType } from "aws-cdk-lib/aws-dynamodb";
+import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { StartingPosition } from "aws-cdk-lib/aws-lambda";
 
 import { Construct } from "constructs";
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -30,6 +33,7 @@ export class EDAAppStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       tableName: "Images",
+      stream: StreamViewType.NEW_AND_OLD_IMAGES,
     });
 
     // Integration infrastructure
@@ -106,6 +110,17 @@ export class EDAAppStack extends cdk.Stack {
       },
     });
 
+    const deleteMailerFn = new lambdanode.NodejsFunction(
+      this,
+      "DeleteMailerFunction",
+      {
+        runtime: lambda.Runtime.NODEJS_16_X,
+        entry: `${__dirname}/../lambdas/deleteMailer.ts`,
+        timeout: cdk.Duration.seconds(15),
+        memorySize: 128,
+      }
+    );
+
     // Topics
     const newImageTopic = new sns.Topic(this, "NewImageTopic", {
       displayName: "New Image topic",
@@ -149,6 +164,17 @@ export class EDAAppStack extends cdk.Stack {
       new events.SqsEventSource(imageProcessQueue, {
         batchSize: 5,
         maxBatchingWindow: cdk.Duration.seconds(10),
+      })
+    );
+
+    // DynamoDB --> Lambda
+    deleteMailerFn.addEventSource(
+      new DynamoEventSource(imagesTable, {
+        startingPosition: StartingPosition.TRIM_HORIZON,
+        batchSize: 5,
+        bisectBatchOnError: true,
+        retryAttempts: 2,
+        enabled: true,
       })
     );
 
@@ -222,6 +248,18 @@ export class EDAAppStack extends cdk.Stack {
         effect: iam.Effect.ALLOW,
         actions: ["dynamodb:UpdateItem"],
         resources: [imagesTable.tableArn],
+      })
+    );
+
+    deleteMailerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ses:SendEmail",
+          "ses:SendRawEmail",
+          "ses:SendTemplatedEmail",
+        ],
+        resources: ["*"],
       })
     );
 
