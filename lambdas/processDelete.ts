@@ -8,11 +8,7 @@ export const handler: SNSHandler = async (event) => {
   for (const record of event.Records) {
     const snsMessage = JSON.parse(record.Sns.Message);
 
-    if (
-      snsMessage.Records &&
-      snsMessage.comment_type &&
-      snsMessage.comment_type === "Delete"
-    ) {
+    if (snsMessage.Records) {
       for (const messageRecord of snsMessage.Records) {
         const s3e = messageRecord.s3;
         const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));

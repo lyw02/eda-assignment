@@ -121,13 +121,7 @@ export class EDAAppStack extends cdk.Stack {
     newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
 
     deleteAndUpdateTopic.addSubscription(
-      new subs.LambdaSubscription(processDeleteFn, {
-        filterPolicy: {
-          comment_type: sns.SubscriptionFilter.stringFilter({
-            allowlist: ["Delete"],
-          }),
-        },
-      })
+      new subs.LambdaSubscription(processDeleteFn)
     );
     deleteAndUpdateTopic.addSubscription(
       new subs.LambdaSubscription(updateTableFn, {
